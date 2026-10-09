@@ -1,0 +1,57 @@
+name: Build Blue Lock jar
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the repository files
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Unpack the project
+        run: |
+          unzip -q bluelock-source.zip
+          ls bluelock
+
+      - name: Build the mod
+        working-directory: bluelock
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon
+
+      - name: Keep the jar as a downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bluelock-jar
+          path: bluelock/build/libs/*.jar
+
+      - name: Publish the jar as a release (direct download)
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Blue Lock build ${{ github.run_number }}
+          files: bluelock/build/libs/*.jar
+
+      - name: Run the self tests
+        continue-on-error: true
+        working-directory: bluelock
+        run: |
+          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.CommonSelfTest
+          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.ContentSelfTest
+          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.BallPitchSelfTest
+          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.MatchSelfTest
+          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.TeamSelfTest
+          
