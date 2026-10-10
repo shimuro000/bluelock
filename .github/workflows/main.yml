@@ -1,4 +1,4 @@
-name: Build Blue Lock jar
+name: Build Blue Lock 0.9.1 jar
 
 on:
   push:
@@ -20,38 +20,43 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Unpack the project
+      - name: Unpack the NEWEST project zip (bluelock-source-vX.Y.Z.zip)
         run: |
-          unzip -q bluelock-source.zip
-          ls bluelock
+          ZIP=$(ls bluelock-source-v*.zip | sort -V | tail -1)
+          echo "Using $ZIP"
+          rm -rf bluelock
+          unzip -q "$ZIP"
+          VERSION=$(grep '^mod_version=' bluelock/gradle.properties | cut -d= -f2)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "### Built from $ZIP (mod version $VERSION)" >> "$GITHUB_STEP_SUMMARY"
+          echo "mod version in this zip: $VERSION"
 
       - name: Build the mod
         working-directory: bluelock
         run: |
           chmod +x gradlew
           ./gradlew build --no-daemon
+          ls build/libs
 
       - name: Keep the jar as a downloadable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bluelock-jar
+          name: bluelock-jar-v${{ env.VERSION }}
           path: bluelock/build/libs/*.jar
 
       - name: Publish the jar as a release (direct download)
         continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: Blue Lock build ${{ github.run_number }}
+          tag_name: v${{ env.VERSION }}-build-${{ github.run_number }}
+          name: Blue Lock v${{ env.VERSION }} (build ${{ github.run_number }})
           files: bluelock/build/libs/*.jar
 
       - name: Run the self tests
         continue-on-error: true
         working-directory: bluelock
         run: |
-          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.CommonSelfTest
-          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.ContentSelfTest
-          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.BallPitchSelfTest
-          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.MatchSelfTest
-          java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.TeamSelfTest
+          for t in CommonSelfTest ContentSelfTest BallPitchSelfTest MatchSelfTest TeamSelfTest GameplaySelfTest BotSelfTest VersionSelfTest; do
+            java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.$t
+          done
           
