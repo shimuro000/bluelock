@@ -29,14 +29,34 @@ jobs:
           VERSION=$(grep '^mod_version=' bluelock/gradle.properties | cut -d= -f2)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "### Built from $ZIP (mod version $VERSION)" >> "$GITHUB_STEP_SUMMARY"
-          echo "mod version in this zip: $VERSION"
 
-      - name: Build the mod
+      - name: Build WITH animation libraries (GeckoLib + PlayerAnimator)
+        id: with_libs
+        continue-on-error: true
+        shell: bash
         working-directory: bluelock
         run: |
           chmod +x gradlew
-          ./gradlew build --no-daemon
-          ls build/libs
+          ./gradlew build --no-daemon -Pwith_libs=true 2>&1 | tee ../build_with_libs.log
+
+      - name: Fallback - build WITHOUT animation libraries
+        if: steps.with_libs.outcome == 'failure'
+        shell: bash
+        working-directory: bluelock
+        run: |
+          echo "### The animation build FAILED, building the basic version instead." >> "$GITHUB_STEP_SUMMARY"
+          echo "Last lines of the animation build (copy these to Claude):" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -n -i -B2 -A6 "error\|FAILED\|could not" ../build_with_libs.log | tail -n 80 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ./gradlew clean build --no-daemon -Pwith_libs=false
+
+      - name: Name this build
+        shell: bash
+        run: |
+          if [ "${{ steps.with_libs.outcome }}" = "success" ]; then KIND="with animations"; else KIND="BASIC (no animations)"; fi
+          echo "KIND=$KIND" >> "$GITHUB_ENV"
+          echo "### Result: $KIND" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the jar as a downloadable artifact
         uses: actions/upload-artifact@v4
@@ -49,14 +69,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}-build-${{ github.run_number }}
-          name: Blue Lock v${{ env.VERSION }} (build ${{ github.run_number }})
+          name: Blue Lock v${{ env.VERSION }} - ${{ env.KIND }} (build ${{ github.run_number }})
           files: bluelock/build/libs/*.jar
 
       - name: Run the self tests
         continue-on-error: true
         working-directory: bluelock
         run: |
-          for t in CommonSelfTest ContentSelfTest BallPitchSelfTest MatchSelfTest TeamSelfTest GameplaySelfTest BotSelfTest VersionSelfTest CreationSelfTest KeeperSelfTest; do
+          for t in CommonSelfTest ContentSelfTest BallPitchSelfTest MatchSelfTest TeamSelfTest GameplaySelfTest BotSelfTest VersionSelfTest CreationSelfTest KeeperSelfTest AnimationSelfTest; do
             java -cp build/classes/java/main:build/classes/java/test com.bluelock.common.$t
           done
           
